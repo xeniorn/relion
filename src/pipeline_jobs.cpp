@@ -447,6 +447,7 @@ bool RelionJob::saveJobSubmissionScript(std::string newfilename, std::string out
 		fh.seekg(0, std::ios::beg);
 		std::string line;
 		std::map<std::string, std::string> replacing;
+		replacing["XXXnodespreadXXX"] = joboptions["nodespread"].getString();
 		replacing["XXXmpinodesXXX"] = floatToString(nmpi);
 		replacing["XXXthreadsXXX"] = floatToString(nthr);
 		replacing["XXXcoresXXX"] = floatToString(ncores);
@@ -570,7 +571,7 @@ bool RelionJob::prepareFinalCommand(std::string &outputname, std::vector<std::st
 		std::string output_script = outputname + "run_submit.script";
 		if (!saveJobSubmissionScript(output_script, outputname, commands, error_message))
 			return false;
-		final_command = joboptions["qsub"].getString() + " " + output_script + " &";
+		final_command = std::string(getenv ("RELION_SCRIPT_SUBMISSION_COMMAND")) + " " + output_script + " &";
 	}
 	else
 	{
@@ -771,7 +772,7 @@ When set to 1, no multi-threading will be used. The maximum can be set through t
 
 	const char * use_queue_input = getenv("RELION_QUEUE_USE");
 	bool use_queue = (use_queue_input == NULL) ? DEFAULTQUEUEUSE : textToBool(use_queue_input);
-	joboptions["do_queue"] = JobOption("Submit to queue?", use_queue, "If set to Yes, the job will be submit to a queue, otherwise \
+	// joboptions["do_queue"] = JobOption("Submit to queue?", use_queue, "If set to Yes, the job will be submit to a queue, otherwise \
 the job will be executed locally. Note that only MPI jobs may be sent to a queue. The default can be set through the environment variable RELION_QUEUE_USE.");
 
 	// Check for environment variable RELION_QUEUE_NAME
@@ -791,7 +792,7 @@ the job will be executed locally. Note that only MPI jobs may be sent to a queue
 		default_command = DEFAULTQSUBCOMMAND;
 	}
 
-	joboptions["qsub"] = JobOption("Queue submit command:", std::string(default_command), "Name of the command used to submit scripts to the queue, e.g. qsub or bsub.\n\n\
+	joboptions["nodespread"] = JobOption("Node spread option:", std::string("auto"), "auto=normal\nnormal - do not force it either way\nmin - use minimal number of nodes\nmax - spread to as many nodes as possible\nfull - always allocate entire nodes"); //comment out rest \
 Note that the person who installed RELION should have made a custom script for your cluster/queue setup. Check this is the case \
 (or create your own script following the RELION Wiki) if you have trouble submitting jobs. The default command can be set through the environment variable RELION_QSUB_COMMAND.");
 
@@ -967,6 +968,7 @@ bool RelionJob::getCommands(std::string &outputname, std::vector<std::string> &c
 
 void RelionJob::initialiseImportJob()
 {
+joboptions["do_queue"] = JobOption("Submit to queue?", false, "Yes - the job will be submit to the cluster; No - the job will be executed locally.");
 
 	hidden_name = ".gui_import";
 
@@ -1129,6 +1131,7 @@ bool RelionJob::getCommandsImportJob(std::string &outputname, std::vector<std::s
 
 void RelionJob::initialiseMotioncorrJob()
 {
+joboptions["do_queue"] = JobOption("Submit to queue?", true, "Yes - the job will be submit to the cluster; No - the job will be executed locally.");
 
 	hidden_name = ".gui_motioncorr";
 
@@ -1294,6 +1297,7 @@ bool RelionJob::getCommandsMotioncorrJob(std::string &outputname, std::vector<st
 
 void RelionJob::initialiseCtffindJob()
 {
+joboptions["do_queue"] = JobOption("Submit to queue?", true, "Yes - the job will be submit to the cluster; No - the job will be executed locally.");
 
 	hidden_name = ".gui_ctffind";
 
@@ -1465,6 +1469,7 @@ bool RelionJob::getCommandsCtffindJob(std::string &outputname, std::vector<std::
 
 void RelionJob::initialiseManualpickJob()
 {
+joboptions["do_queue"] = JobOption("Submit to queue?", false, "Yes - the job will be submit to the cluster; No - the job will be executed locally.");
 
 	hidden_name = ".gui_manualpick";
 
@@ -1577,6 +1582,7 @@ bool RelionJob::getCommandsManualpickJob(std::string &outputname, std::vector<st
 
 void RelionJob::initialiseAutopickJob()
 {
+joboptions["do_queue"] = JobOption("Submit to queue?", true, "Yes - the job will be submit to the cluster; No - the job will be executed locally.");
 
 	hidden_name = ".gui_autopick";
 
@@ -1621,7 +1627,7 @@ The samplings are approximate numbers and vary slightly over the sphere.\n\n For
 
 	joboptions["shrink"] = JobOption("Shrink factor:", 1, 0, 1, 0.1, "This is useful to speed up the calculations, and to make them less memory-intensive. The micrographs will be downscaled (shrunk) to calculate the cross-correlations, and peak searching will be done in the downscaled FOM maps. When set to 0, the micrographs will de downscaled to the lowpass filter of the references, a value between 0 and 1 will downscale the micrographs by that factor. Note that the results will not be exactly the same when you shrink micrographs!\
 \n\nIn the Laplacian-of-Gaussian picker, this option is ignored and the shrink factor always becomes 0.");
-	joboptions["use_gpu"] = JobOption("Use GPU acceleration?", false, "If set to Yes, the job will try to use GPU acceleration. The Laplacian-of-Gaussian picker does not support GPU.");
+	joboptions["use_gpu"] = JobOption("Use GPU acceleration?", true, "If set to Yes, the job will try to use GPU acceleration. The Laplacian-of-Gaussian picker does not support GPU.");
 	joboptions["gpu_ids"] = JobOption("Which GPUs to use:", std::string(""), "This argument is not necessary. If left empty, the job itself will try to allocate available GPU resources. You can override the default allocation by providing a list of which GPUs (0,1,2,3, etc) to use. MPI-processes are separated by ':'. For example: 0:1:0:1:0:1");
 
 	joboptions["do_pick_helical_segments"] = JobOption("Pick 2D helical segments?", false, "Set to Yes if you want to pick 2D helical segments.");
@@ -1815,6 +1821,7 @@ bool RelionJob::getCommandsAutopickJob(std::string &outputname, std::vector<std:
 
 void RelionJob::initialiseExtractJob()
 {
+joboptions["do_queue"] = JobOption("Submit to queue?", true, "Yes - the job will be submit to the cluster; No - the job will be executed locally.");
 
 	hidden_name = ".gui_extract";
 
@@ -2002,6 +2009,7 @@ bool RelionJob::getCommandsExtractJob(std::string &outputname, std::vector<std::
 
 void RelionJob::initialiseSortJob()
 {
+joboptions["do_queue"] = JobOption("Submit to queue?", true, "Yes - the job will be submit to the cluster; No - the job will be executed locally.");
 	hidden_name = ".gui_sort";
 
 	joboptions["input_star"] = JobOption("Input particles to be sorted:", NODE_PART_DATA, "", "Input particles(*.{star})", "This STAR file should contain in-plane rotations, in-plane translations and a class number that were obtained by alignment (class2D/class3D or auto3D) OR auto-picking. A column called rlnParticleSelectZScore will be added to this same STAR file with the sorting result. This column can then be used in the display programs to sort the particles on.");
@@ -2100,6 +2108,7 @@ bool RelionJob::getCommandsSortJob(std::string &outputname, std::vector<std::str
 
 void RelionJob::initialiseSelectJob()
 {
+joboptions["do_queue"] = JobOption("Submit to queue?", false, "Yes - the job will be submit to the cluster; No - the job will be executed locally.");
 
 	hidden_name = ".gui_select";
 
@@ -2465,6 +2474,7 @@ bool RelionJob::getCommandsSelectJob(std::string &outputname, std::vector<std::s
 
 void RelionJob::initialiseClass2DJob()
 {
+joboptions["do_queue"] = JobOption("Submit to queue?", true, "Yes - the job will be submit to the cluster; No - the job will be executed locally.");
 
 	hidden_name = ".gui_class2d";
 
@@ -2546,7 +2556,7 @@ within +/- the given amount (in degrees) from the psi priors estimated through h
 A range of 15 degrees is the same as sigma = 5 degrees. Note that the ranges of angular searches should be much larger than the sampling.\
 \n\nThis option will be invalid if you choose not to perform image alignment on 'Sampling' tab.");
 
-	joboptions["nr_pool"] = JobOption("Number of pooled particles:", 3, 1, 16, 1, "Particles are processed in individual batches by MPI slaves. During each batch, a stack of particle images is only opened and closed once to improve disk access times. \
+	joboptions["nr_pool"] = JobOption("Number of pooled particles:", 30, 1, 50, 1, "Particles are processed in individual batches by MPI slaves. During each batch, a stack of particle images is only opened and closed once to improve disk access times. \
 All particle images of a single batch are read into memory together. The size of these batches is at least one particle per thread used. The nr_pooled_particles parameter controls how many particles are read together for each thread. If it is set to 3 and one uses 8 threads, batches of 3x8=24 particles will be read together. \
 This may improve performance on systems where disk access, and particularly metadata handling of disk access, is a problem. It has a modest cost of increased RAM usage.");
 	joboptions["do_parallel_discio"] = JobOption("Use parallel disc I/O?", true, "If set to Yes, all MPI slaves will read images from disc. \
@@ -2560,7 +2570,7 @@ Provided this directory is on a fast local drive (e.g. an SSD drive), processing
 All MPI salves will then read in the combined results. This reduces heavy load on the network, but increases load on the disc I/O. \
 This will affect the time it takes between the progress-bar in the expectation step reaching its end (the mouse gets to the cheese) and the start of the ensuing maximisation step. It will depend on your system setup which is most efficient.");
 
-	joboptions["use_gpu"] = JobOption("Use GPU acceleration?", false, "If set to Yes, the job will try to use GPU acceleration.");
+	joboptions["use_gpu"] = JobOption("Use GPU acceleration?", true, "If set to Yes, the job will try to use GPU acceleration.");
 	joboptions["gpu_ids"] = JobOption("Which GPUs to use:", std::string(""), "This argument is not necessary. If left empty, the job itself will try to allocate available GPU resources. You can override the default allocation by providing a list of which GPUs (0,1,2,3, etc) to use. MPI-processes are separated by ':', threads by ','. For example: '0,0:1,1:0,0:1,1'");
 
 }
@@ -2717,6 +2727,7 @@ bool RelionJob::getCommandsClass2DJob(std::string &outputname, std::vector<std::
 // Constructor for initial model job
 void RelionJob::initialiseInimodelJob()
 {
+joboptions["do_queue"] = JobOption("Submit to queue?", true, "Yes - the job will be submit to the cluster; No - the job will be executed locally.");
 
 	hidden_name = ".gui_inimodel";
 
@@ -2790,7 +2801,7 @@ Therefore, if adaptive=1, the translations will first be evaluated on a 2x coars
 
 	joboptions["do_parallel_discio"] = JobOption("Use parallel disc I/O?", true, "If set to Yes, all MPI slaves will read their own images from disc. \
 Otherwise, only the master will read images and send them through the network to the slaves. Parallel file systems like gluster of fhgfs are good at parallel disc I/O. NFS may break with many slaves reading in parallel.");
-	joboptions["nr_pool"] = JobOption("Number of pooled particles:", 3, 1, 16, 1, "Particles are processed in individual batches by MPI slaves. During each batch, a stack of particle images is only opened and closed once to improve disk access times. \
+	joboptions["nr_pool"] = JobOption("Number of pooled particles:", 30, 1, 50, 1, "Particles are processed in individual batches by MPI slaves. During each batch, a stack of particle images is only opened and closed once to improve disk access times. \
 All particle images of a single batch are read into memory together. The size of these batches is at least one particle per thread used. The nr_pooled_particles parameter controls how many particles are read together for each thread. If it is set to 3 and one uses 8 threads, batches of 3x8=24 particles will be read together. \
 This may improve performance on systems where disk access, and particularly metadata handling of disk access, is a problem. It has a modest cost of increased RAM usage.");
 	joboptions["do_pad1"] = JobOption("Skip padding?", false, "If set to Yes, the calculations will not use padding in Fourier space for better interpolation in the references. Otherwise, references are padded 2x before Fourier transforms are calculated. Skipping padding (i.e. use --pad 1) gives nearly as good results as using --pad 2, but some artifacts may appear in the corners from signal that is folded back.");
@@ -2803,7 +2814,7 @@ Provided this directory is on a fast local drive (e.g. an SSD drive), processing
 All MPI salves will then read in the combined results. This reduces heavy load on the network, but increases load on the disc I/O. \
 This will affect the time it takes between the progress-bar in the expectation step reaching its end (the mouse gets to the cheese) and the start of the ensuing maximisation step. It will depend on your system setup which is most efficient.");
 
-	joboptions["use_gpu"] = JobOption("Use GPU acceleration?", false, "If set to Yes, the job will try to use GPU acceleration.");
+	joboptions["use_gpu"] = JobOption("Use GPU acceleration?", true, "If set to Yes, the job will try to use GPU acceleration.");
 	joboptions["gpu_ids"] = JobOption("Which GPUs to use:", std::string(""), "This argument is not necessary. If left empty, the job itself will try to allocate available GPU resources. You can override the default allocation by providing a list of which GPUs (0,1,2,3, etc) to use. MPI-processes are separated by ':', threads by ','. For example: '0,0:1,1:0,0:1,1'");
 
 }
@@ -2946,6 +2957,7 @@ bool RelionJob::getCommandsInimodelJob(std::string &outputname, std::vector<std:
 
 void RelionJob::initialiseClass3DJob()
 {
+joboptions["do_queue"] = JobOption("Submit to queue?", true, "Yes - the job will be submit to the cluster; No - the job will be executed locally.");
 
 	hidden_name = ".gui_class3d";
 
@@ -3122,7 +3134,7 @@ Values of ~ 2.0 are recommended for flexible structures such as MAVS-CARD filame
 
 	joboptions["do_parallel_discio"] = JobOption("Use parallel disc I/O?", true, "If set to Yes, all MPI slaves will read their own images from disc. \
 Otherwise, only the master will read images and send them through the network to the slaves. Parallel file systems like gluster of fhgfs are good at parallel disc I/O. NFS may break with many slaves reading in parallel.");
-	joboptions["nr_pool"] = JobOption("Number of pooled particles:", 3, 1, 16, 1, "Particles are processed in individual batches by MPI slaves. During each batch, a stack of particle images is only opened and closed once to improve disk access times. \
+	joboptions["nr_pool"] = JobOption("Number of pooled particles:", 30, 1, 50, 1, "Particles are processed in individual batches by MPI slaves. During each batch, a stack of particle images is only opened and closed once to improve disk access times. \
 All particle images of a single batch are read into memory together. The size of these batches is at least one particle per thread used. The nr_pooled_particles parameter controls how many particles are read together for each thread. If it is set to 3 and one uses 8 threads, batches of 3x8=24 particles will be read together. \
 This may improve performance on systems where disk access, and particularly metadata handling of disk access, is a problem. It has a modest cost of increased RAM usage.");
 	joboptions["do_pad1"] = JobOption("Skip padding?", false, "If set to Yes, the calculations will not use padding in Fourier space for better interpolation in the references. Otherwise, references are padded 2x before Fourier transforms are calculated. Skipping padding (i.e. use --pad 1) gives nearly as good results as using --pad 2, but some artifacts may appear in the corners from signal that is folded back.");
@@ -3135,7 +3147,7 @@ Provided this directory is on a fast local drive (e.g. an SSD drive), processing
 All MPI salves will then read in the combined results. This reduces heavy load on the network, but increases load on the disc I/O. \
 This will affect the time it takes between the progress-bar in the expectation step reaching its end (the mouse gets to the cheese) and the start of the ensuing maximisation step. It will depend on your system setup which is most efficient.");
 
-	joboptions["use_gpu"] = JobOption("Use GPU acceleration?", false, "If set to Yes, the job will try to use GPU acceleration.");
+	joboptions["use_gpu"] = JobOption("Use GPU acceleration?", true, "If set to Yes, the job will try to use GPU acceleration.");
 	joboptions["gpu_ids"] = JobOption("Which GPUs to use:", std::string(""), "This argument is not necessary. If left empty, the job itself will try to allocate available GPU resources. You can override the default allocation by providing a list of which GPUs (0,1,2,3, etc) to use. MPI-processes are separated by ':', threads by ','.  For example: '0,0:1,1:0,0:1,1'");
 
 }
@@ -3362,6 +3374,7 @@ bool RelionJob::getCommandsClass3DJob(std::string &outputname, std::vector<std::
 
 void RelionJob::initialiseAutorefineJob()
 {
+joboptions["do_queue"] = JobOption("Submit to queue?", true, "Yes - the job will be submit to the cluster; No - the job will be executed locally.");
 	type = PROC_3DAUTO;
 
 	hidden_name = ".gui_auto3d";
@@ -3513,7 +3526,7 @@ Values of ~ 2.0 are recommended for flexible structures such as MAVS-CARD filame
 
 	joboptions["do_parallel_discio"] = JobOption("Use parallel disc I/O?", true, "If set to Yes, all MPI slaves will read their own images from disc. \
 Otherwise, only the master will read images and send them through the network to the slaves. Parallel file systems like gluster of fhgfs are good at parallel disc I/O. NFS may break with many slaves reading in parallel.");
-	joboptions["nr_pool"] = JobOption("Number of pooled particles:", 3, 1, 16, 1, "Particles are processed in individual batches by MPI slaves. During each batch, a stack of particle images is only opened and closed once to improve disk access times. \
+	joboptions["nr_pool"] = JobOption("Number of pooled particles:", 30, 1, 50, 1, "Particles are processed in individual batches by MPI slaves. During each batch, a stack of particle images is only opened and closed once to improve disk access times. \
 All particle images of a single batch are read into memory together. The size of these batches is at least one particle per thread used. The nr_pooled_particles parameter controls how many particles are read together for each thread. If it is set to 3 and one uses 8 threads, batches of 3x8=24 particles will be read together. \
 This may improve performance on systems where disk access, and particularly metadata handling of disk access, is a problem. It has a modest cost of increased RAM usage.");
 	joboptions["do_pad1"] = JobOption("Skip padding?", false, "If set to Yes, the calculations will not use padding in Fourier space for better interpolation in the references. Otherwise, references are padded 2x before Fourier transforms are calculated. Skipping padding (i.e. use --pad 1) gives nearly as good results as using --pad 2, but some artifacts may appear in the corners from signal that is folded back.");
@@ -3525,7 +3538,7 @@ Provided this directory is on a fast local drive (e.g. an SSD drive), processing
 	joboptions["do_combine_thru_disc"] = JobOption("Combine iterations through disc?", false, "If set to Yes, at the end of every iteration all MPI slaves will write out a large file with their accumulated results. The MPI master will read in all these files, combine them all, and write out a new file with the combined results. \
 All MPI salves will then read in the combined results. This reduces heavy load on the network, but increases load on the disc I/O. \
 This will affect the time it takes between the progress-bar in the expectation step reaching its end (the mouse gets to the cheese) and the start of the ensuing maximisation step. It will depend on your system setup which is most efficient.");
-	joboptions["use_gpu"] = JobOption("Use GPU acceleration?", false, "If set to Yes, the job will try to use GPU acceleration.");
+	joboptions["use_gpu"] = JobOption("Use GPU acceleration?", true, "If set to Yes, the job will try to use GPU acceleration.");
 	joboptions["gpu_ids"] = JobOption("Which GPUs to use:", std::string(""), "This argument is not necessary. If left empty, the job itself will try to allocate available GPU resources. You can override the default allocation by providing a list of which GPUs (0,1,2,3, etc) to use. MPI-processes are separated by ':', threads by ','.  For example: '0,0:1,1:0,0:1,1'");
 
 
@@ -3743,6 +3756,7 @@ bool RelionJob::getCommandsAutorefineJob(std::string &outputname, std::vector<st
 
 void RelionJob::initialiseMultiBodyJob()
 {
+joboptions["do_queue"] = JobOption("Submit to queue?", true, "Yes - the job will be submit to the cluster; No - the job will be executed locally.");
 	type = PROC_MULTIBODY;
 
 	hidden_name = ".gui_multibody";
@@ -3803,7 +3817,7 @@ Note that this will only be the value for the first few iteration(s): the sampli
 
 	joboptions["do_parallel_discio"] = JobOption("Use parallel disc I/O?", true, "If set to Yes, all MPI slaves will read their own images from disc. \
 Otherwise, only the master will read images and send them through the network to the slaves. Parallel file systems like gluster of fhgfs are good at parallel disc I/O. NFS may break with many slaves reading in parallel.");
-	joboptions["nr_pool"] = JobOption("Number of pooled particles:", 3, 1, 16, 1, "Particles are processed in individual batches by MPI slaves. During each batch, a stack of particle images is only opened and closed once to improve disk access times. \
+	joboptions["nr_pool"] = JobOption("Number of pooled particles:", 30, 1, 50, 1, "Particles are processed in individual batches by MPI slaves. During each batch, a stack of particle images is only opened and closed once to improve disk access times. \
 All particle images of a single batch are read into memory together. The size of these batches is at least one particle per thread used. The nr_pooled_particles parameter controls how many particles are read together for each thread. If it is set to 3 and one uses 8 threads, batches of 3x8=24 particles will be read together. \
 This may improve performance on systems where disk access, and particularly metadata handling of disk access, is a problem. It has a modest cost of increased RAM usage.");
 	joboptions["do_pad1"] = JobOption("Skip padding?", false, "If set to Yes, the calculations will not use padding in Fourier space for better interpolation in the references. Otherwise, references are padded 2x before Fourier transforms are calculated. Skipping padding (i.e. use --pad 1) gives nearly as good results as using --pad 2, but some artifacts may appear in the corners from signal that is folded back.");
@@ -3815,7 +3829,7 @@ Provided this directory is on a fast local drive (e.g. an SSD drive), processing
 	joboptions["do_combine_thru_disc"] = JobOption("Combine iterations through disc?", false, "If set to Yes, at the end of every iteration all MPI slaves will write out a large file with their accumulated results. The MPI master will read in all these files, combine them all, and write out a new file with the combined results. \
 All MPI salves will then read in the combined results. This reduces heavy load on the network, but increases load on the disc I/O. \
 This will affect the time it takes between the progress-bar in the expectation step reaching its end (the mouse gets to the cheese) and the start of the ensuing maximisation step. It will depend on your system setup which is most efficient.");
-	joboptions["use_gpu"] = JobOption("Use GPU acceleration?", false, "If set to Yes, the job will try to use GPU acceleration.");
+	joboptions["use_gpu"] = JobOption("Use GPU acceleration?", true, "If set to Yes, the job will try to use GPU acceleration.");
 	joboptions["gpu_ids"] = JobOption("Which GPUs to use:", std::string(""), "This argument is not necessary. If left empty, the job itself will try to allocate available GPU resources. You can override the default allocation by providing a list of which GPUs (0,1,2,3, etc) to use. MPI-processes are separated by ':', threads by ','.  For example: '0,0:1,1:0,0:1,1'");
 
 
@@ -4023,6 +4037,7 @@ bool RelionJob::getCommandsMultiBodyJob(std::string &outputname, std::vector<std
 
 void RelionJob::initialiseMovierefineJob()
 {
+joboptions["do_queue"] = JobOption("Submit to queue?", true, "Yes - the job will be submit to the cluster; No - the job will be executed locally.");
 
 	hidden_name = ".gui_movierefine";
 
@@ -4222,6 +4237,7 @@ bool RelionJob::getCommandsMovierefineJob(std::string &outputname, std::vector<s
 
 void RelionJob::initialisePolishJob()
 {
+joboptions["do_queue"] = JobOption("Submit to queue?", true, "Yes - the job will be submit to the cluster; No - the job will be executed locally.");
 
 	hidden_name = ".gui_polish";
 
@@ -4368,6 +4384,7 @@ bool RelionJob::getCommandsPolishJob(std::string &outputname, std::vector<std::s
 
 void RelionJob::initialiseMaskcreateJob()
 {
+joboptions["do_queue"] = JobOption("Submit to queue?", false, "Yes - the job will be submit to the cluster; No - the job will be executed locally.");
 	hidden_name = ".gui_maskcreate";
 
 	joboptions["fn_in"] = JobOption("Input 3D map:", NODE_3DREF, "", "MRC map files (*.mrc)", "Provide an input MRC map from which to start binarizing the map.");
@@ -4442,6 +4459,7 @@ bool RelionJob::getCommandsMaskcreateJob(std::string &outputname, std::vector<st
 
 void RelionJob::initialiseJoinstarJob()
 {
+joboptions["do_queue"] = JobOption("Submit to queue?", false, "Yes - the job will be submit to the cluster; No - the job will be executed locally.");
 
 	hidden_name = ".gui_joinstar";
 
@@ -4609,6 +4627,7 @@ bool RelionJob::getCommandsJoinstarJob(std::string &outputname, std::vector<std:
 
 void RelionJob::initialiseSubtractJob()
 {
+joboptions["do_queue"] = JobOption("Submit to queue?", true, "Yes - the job will be submit to the cluster; No - the job will be executed locally.");
 
 	hidden_name = ".gui_subtract";
 
@@ -4706,6 +4725,7 @@ bool RelionJob::getCommandsSubtractJob(std::string &outputname, std::vector<std:
 
 void RelionJob::initialisePostprocessJob()
 {
+joboptions["do_queue"] = JobOption("Submit to queue?", false, "Yes - the job will be submit to the cluster; No - the job will be executed locally.");
 
 	hidden_name = ".gui_post";
 
@@ -4814,6 +4834,7 @@ bool RelionJob::getCommandsPostprocessJob(std::string &outputname, std::vector<s
 
 void RelionJob::initialiseLocalresJob()
 {
+joboptions["do_queue"] = JobOption("Submit to queue?", false, "Yes - the job will be submit to the cluster; No - the job will be executed locally.");
 
 	hidden_name = ".gui_localres";
 
@@ -4961,6 +4982,7 @@ bool RelionJob::getCommandsLocalresJob(std::string &outputname, std::vector<std:
 
 void RelionJob::initialiseMotionrefineJob()
 {
+joboptions["do_queue"] = JobOption("Submit to queue?", true, "Yes - the job will be submit to the cluster; No - the job will be executed locally.");
 
 	hidden_name = ".gui_bayespolish";
 
@@ -5117,6 +5139,7 @@ bool RelionJob::getCommandsMotionrefineJob(std::string &outputname, std::vector<
 
 void RelionJob::initialiseCtfrefineJob()
 {
+joboptions["do_queue"] = JobOption("Submit to queue?", true, "Yes - the job will be submit to the cluster; No - the job will be executed locally.");
 
 	hidden_name = ".gui_ctfrefine";
 
