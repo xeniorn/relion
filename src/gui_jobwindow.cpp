@@ -156,7 +156,7 @@ void JobWindow::setupRunTab()
 
 	place("queuename");
 
-	place("qsub");
+	place("nodespread");
 
 	char * extra_count_text = getenv ("RELION_QSUB_EXTRA_COUNT");
 	const char extra_count_val = (extra_count_text ? atoi(extra_count_text) : 2);
