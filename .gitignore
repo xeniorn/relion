@@ -9,3 +9,9 @@ external
 .project
 Debug
 *.pyc
+# -> xeniorn
+/.vscode
+/.vs
+/bin
+/tmp
+/temp
