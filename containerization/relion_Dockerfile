@@ -1,9 +1,12 @@
 
 
 
+# clip cluster Nvidia driver 535.129 only compatible up to CUDA 12.2
+# ARG DOCKER_CUDA_IMAGE_VERSION="12.3.2-cudnn9-devel-ubuntu22.04"
+ARG DOCKER_CUDA_IMAGE_VERSION="12.2.2-cudnn8-devel-ubuntu20.04"
 
 ##############################################################################################################################################################
-FROM nvidia/cuda:12.3.2-cudnn9-devel-ubuntu22.04 as build
+FROM nvidia/cuda:${DOCKER_CUDA_IMAGE_VERSION} as build
 
 ### Set up Ubuntu ###
 # for localtime WARNING
