@@ -38,32 +38,50 @@ default_vars_json=r"""
 
 def run(image_path: str,
         apptainer_exe: str,
-        relion_gui_exe: str) -> None:
+        relion_gui_exe: str,
+        use_gpu: bool) -> None:
+    """
+    Runs the image according to input parameters
+    """
 
     default_var_dict: dict[str,str] = json.loads(default_vars_json)
 
     for name,value in default_var_dict.items():
         os.environ[name] = value
 
-    subprocess.run([apptainer_exe, "run", image_path, relion_gui_exe])
+    use_gpu_arg: str | None = "--nv" if use_gpu else None 
+
+    args: list[str|None] = [apptainer_exe, "run", use_gpu_arg, image_path, relion_gui_exe]
+    final_args: list[str] = [arg for arg in args if arg is not None]
+
+    # apptainer run --nv image.sif reion
+    print(final_args)
+    subprocess.run(final_args)
 
 
 def run_from_commandline():
+    """
+    Parses command line args and passes it on to the actual run command.
+    """
     
     parser = argparse.ArgumentParser(description="Run relion!", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser_required = parser.add_argument_group("Required")
     parser_required.add_argument('--image-path', type=str, help='Path to the apptainer image to run.', required=True)
 
-    parser_deployment = parser.add_argument_group("Deployment-specific options", "Options that might be different in different deployments, not related to the behavior of the app itself.")    
-    parser_deployment.add_argument('--apptainer-exe', type=str, default='apptainer', help='Command for running apptainer (aka singularity) itself.')
-    parser_deployment.add_argument('--relion-gui-exe', type=str, default='relion', help='Command for running the relion gui inside the (apptainer) container.')
+    parser_optional = parser.add_argument_group("Optional")
+    parser_optional.add_argument('--use-gpu', type=bool, action="store_true", default=True, help='should gpus be used', required=False)
+
+    parser_deployment = parser.add_argument_group("Deployment-specific options", "Options that might be different in different deployments, not related to the behavior of the app itself.")
+    parser_deployment.add_argument('--apptainer-exe', type=str, default='apptainer', help='Command for running apptainer (aka singularity) itself.', required=False)
+    parser_deployment.add_argument('--relion-gui-exe', type=str, default='relion', help='Command for running the relion gui inside the (apptainer) container.', required=False)
 
     args = parser.parse_args()
 
     run(image_path = args.image_path,
         apptainer_exe = args.apptainer_exe,
-        relion_gui_exe = args.relion_gui_exe
+        relion_gui_exe = args.relion_gui_exe,
+        use_gpu = args.use_gpu
         )
     
 
