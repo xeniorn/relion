@@ -1,0 +1,30 @@
+name: Docker Image CI
+
+on:
+  push:
+    # 2024-04-026 seems to be failing for now on github workers, so don't waste cycles on it
+    branches: [ "devel_disabled" ]
+  workflow_dispatch:
+    inputs:
+      ompi_version:
+        description: 'ompi version to use for build'
+        required: false
+        default: "4.1.6"
+        type: string
+
+jobs:
+
+  build_docker_image:
+
+    runs-on: ubuntu-lastest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set version
+      if: "${{ inputs.ompi_version != '' }}"
+      run: echo "ompi_version=${{ inputs.ompi_version }}" >> $GITHUB_ENV
+    - name: Build the Docker image
+      run: docker build -t relion:${version}_slurm  --file ./containerization/relion.dockerfile --build-arg OMPI_VERSION=${ompi_version} ./
+      env:
+        ompi_version: "4.1.6"
+
