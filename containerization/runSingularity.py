@@ -7,6 +7,14 @@ import json
 
 default_vars_json=r"""
 {
+ "RELION_STACK_BUFFER": "0", 
+ "RELION_SCRATCH_DIR": "auto",
+ "RELION_SHELL": "bash",
+ "RELION_MPI_RUN": "srun",
+ "RELION_QSUB_NRMPI": "1",
+ "RELION_MPI_MAX": "128",
+ "RELION_QSUB_NRTHREADS": "1",
+ "RELION_THREAD_MAX": "",
  "RELION_QSUB_COMMAND": "bash",
  "RELION_QUEUE_USE": "true",
  "RELION_QUEUE_NAME": "auto",
@@ -27,12 +35,15 @@ default_vars_json=r"""
  "RELION_QSUB_EXTRA5": "override sbatch parameters", 
  "RELION_QSUB_EXTRA5_DEFAULT": "",
  "RELION_QSUB_EXTRA5_HELP": "These parameters will be passed verbatim to the sbatch command (e.g. if you want to override any of the parameters manually, add --hold, --dependency:afterany:JOBID, --comment='this is my job' etc", 
+ "RELION_MINIMUM_DEDICATED": "1",
  "RELION_ALLOW_CHANGE_MINIMUM_DEDICATED": "0",
  "RELION_CTFFIND_EXECUTABLE": "/software/f2022/software/ctffind/4.1.14-foss-2022b/bin/ctffind",
  "RELION_GCTF_EXECUTABLE": "/software/f2022/software/gctf/1.06/bin/gctf",
  "RELION_MOTIONCOR2_EXECUTABLE": "/software/f2022/software/motioncor2/1.6.4-gcccore-12.2.0/bin/motioncor2",
+ "RELION_RESMAP_EXECUTABLE": "",
  "RELION_IMOD_WRAPPER_EXECUTABLE": "",
- "RELION_EXTERNAL_RECONSTRUCT_EXECUTABLE": ""
+ "RELION_EXTERNAL_RECONSTRUCT_EXECUTABLE": "",
+ "RELION_PDFVIEWER_EXECUTABLE": "",
 }
 """
 
@@ -70,11 +81,16 @@ def run_from_commandline():
     parser_required.add_argument('--image-path', type=str, help='Path to the apptainer image to run.', required=True)
 
     parser_optional = parser.add_argument_group("Optional")
-    parser_optional.add_argument('--use-gpu', type=bool, action="store_true", default=True, help='should gpus be used', required=False)
+    parser_optional.add_argument('--use-gpu', type=bool, action="store", default=True, help='should gpus be used', required=False)
 
     parser_deployment = parser.add_argument_group("Deployment-specific options", "Options that might be different in different deployments, not related to the behavior of the app itself.")
     parser_deployment.add_argument('--apptainer-exe', type=str, default='apptainer', help='Command for running apptainer (aka singularity) itself.', required=False)
     parser_deployment.add_argument('--relion-gui-exe', type=str, default='relion', help='Command for running the relion gui inside the (apptainer) container.', required=False)
+
+    parser_misc = parser.add_argument_group("Misc")
+    parser_misc_verbosity = parser_misc.add_mutually_exclusive_group(required=False)
+    parser_misc_verbosity.add_argument('--quiet', action="store_true", default=False)
+    parser_misc_verbosity.add_argument('--verbose', action="store_true", default=False)
 
     args = parser.parse_args()
 
