@@ -21,3 +21,14 @@ Thus, please read the above instructions carefully even if you are familiar with
 
 The default model for the class ranker has been trained and tested in Python 3.9.12 with Pytorch 1.10.0 and Numpy 1.20.0.
 If you wish to retrain the class ranker model with your own data, please refer to [this repo](https://github.com/3dem/relion-classranker).
+
+
+## Containerization
+
+### Building docker image
+	ompi_version=4.1.6
+	docker build -t relion:${version}_slurm  --file ./containerization/relion.dockerfile --build-arg OMPI_VERSION=${ompi_version} ./
+
+
+### Building apptainer image
+	apptainer build relion_ompi${ompi_version}_slurm.sif docker-daemon:relion:${version}_slurm
