@@ -9,10 +9,6 @@ ARG CONTAINER_DATA_MOUNT_ROOT="/data"
 ARG CONTAINER_TORCH_HOME="${CONTAINER_DATA_MOUNT_ROOT}/torch/home"
 ARG CONTAINER_RELION_SCRATCH_DIR="/scratch"
 
-ARG CTFFIND_VERSION="4.1.14"
-ARG CONTAINER_CTFFIND_DIR="/usr/local/apps/ctffind-${CTFFIND_VERSION}"
-ARG CONTAINER_RELION_INSTALL_DIR="/usr/local/apps/relion"
-
 ARG OMPI_SLURM_SUPPORT=1
 ARG OMPI_VERSION="3.1.1"
 ARG OMPI_CONFIG_ARGS=""
@@ -23,8 +19,13 @@ ARG CONTAINER_PYENV_DIR="/usr/local/apps/pyenv"
 ARG CONTAINER_CONDA_DIR="${CONTAINER_PYENV_DIR}/versions/${CONDA_PACKAGE}"
 ARG CONTAINER_RELION_ENV_NAME="relion_env"
 
+ARG CTFFIND_VERSION="4.1.14"
+ARG CONTAINER_CTFFIND_DIR="/usr/local/apps/ctffind-${CTFFIND_VERSION}"
+
 ARG RELION_CUDA_ARCH="50"
 ARG RELION_CUDA_ON_OFF="ON"
+ARG CONTAINER_RELION_INSTALL_DIR="/usr/local/apps/relion"
+ARG CONTAINER_RELION_CONDA_DIR="${CONTAINER_CONDA_DIR}/envs/${CONTAINER_RELION_ENV_NAME}"
 
 ARG RELIONAPP_REPO_URL="https://github.com/xeniorn/relion.git"
 ARG RELIONAPP_REPO_BRANCH="devel"
@@ -123,6 +124,8 @@ ARG CONTAINER_PYENV_DIR
 RUN git clone https://github.com/yyuu/pyenv.git ${CONTAINER_PYENV_DIR}
 
 ENV PATH="${CONTAINER_PYENV_DIR}/bin:${PATH}"
+# required, don't remove PYENV_ROOT!
+ENV PYENV_ROOT=${CONTAINER_PYENV_DIR}
 RUN echo "export PATH=${CONTAINER_PYENV_DIR}/bin:\${PATH}" >>${CONTAINER_ENV_VARS_FILE}
 
 ARG CONDA_PACKAGE
@@ -130,7 +133,8 @@ ARG CONDA_PACKAGE
 # Install Miniforge through Pyenv
 RUN pyenv install --list \
 && pyenv install ${CONDA_PACKAGE} \
-&& pyenv global ${CONDA_PACKAGE}
+&& pyenv global ${CONDA_PACKAGE} \
+&& pyenv versions
 
 # Activate the environment of installed Miniforge
 ARG CONTAINER_CONDA_DIR
@@ -138,34 +142,37 @@ ENV PATH="${CONTAINER_CONDA_DIR}/bin:${PATH}"
 RUN echo "export PATH=${CONTAINER_CONDA_DIR}/bin:\${PATH}" >>${CONTAINER_ENV_VARS_FILE}
 
 # Update conda
-RUN echo ${CONTAINER_CONDA_DIR} && conda update -n base conda
+RUN conda update -n base conda
 
 # Clone RELION (ver. 5.0-beta) repository to /usr/local/apps/relion-git
 ARG TEMP_GIT_DIR="/tmp/relion-git/build_conda"
+ARG RELIONAPP_REPO_URL
+ARG RELIONAPP_REPO_BRANCH
 RUN git clone ${RELIONAPP_REPO_URL} -b ${RELIONAPP_REPO_BRANCH} ${TEMP_GIT_DIR}
 WORKDIR ${TEMP_GIT_DIR}
 
+ARG RELIONAPP_REPO_COMMIT
 RUN if [ ! -v RELIONAPP_REPO_COMMIT ]; then \
 ENV RELIONAPP_REPO_COMMIT=$(git rev-parse HEAD); \
 fi \
 && git checkout ${RELIONAPP_REPO_COMMIT}
 
 ARG CONTAINER_RELION_ENV_NAME
-RUN sed -i -e 's|name: relion-5.0|name: ${CONTAINER_RELION_ENV_NAME}|g' ./environment.yml
+RUN sed -i -r -e 's|name: .+|name: ${CONTAINER_RELION_ENV_NAME}|g' ./environment.yml
 
 # Create a conda environment for RELION (relion-conda)
 RUN conda env create -f ./environment.yml
 
 # Activate the relion-conda
-ARG RELION_CONDA_DIR="${CONTAINER_CONDA_DIR}/envs/${CONTAINER_RELION_ENV_NAME}"
+ARG CONTAINER_RELION_CONDA_DIR
 
-ENV PATH="${RELION_CONDA_DIR}/bin:${PATH}"
-ENV LD_LIBRARY_PATH="${RELION_CONDA_DIR}/lib:${LD_LIBRARY_PATH}"
+ENV PATH="${CONTAINER_RELION_CONDA_DIR}/bin:${PATH}"
+ENV LD_LIBRARY_PATH="${CONTAINER_RELION_CONDA_DIR}/lib:${LD_LIBRARY_PATH}"
 
-RUN echo "export PATH=${RELION_CONDA_DIR}/bin:\${PATH}" >>${CONTAINER_ENV_VARS_FILE} \
-    && echo "export LD_LIBRARY_PATH=${RELION_CONDA_DIR}/lib:\${LD_LIBRARY_PATH}" >>${CONTAINER_ENV_VARS_FILE}
+RUN echo "export PATH=${CONTAINER_RELION_CONDA_DIR}/bin:\${PATH}" >>${CONTAINER_ENV_VARS_FILE} \
+    && echo "export LD_LIBRARY_PATH=${CONTAINER_RELION_CONDA_DIR}/lib:\${LD_LIBRARY_PATH}" >>${CONTAINER_ENV_VARS_FILE}
 
-    RUN rm -rf ${TEMP_GIT_DIR}
+RUN rm -rf ${TEMP_GIT_DIR}
 
 ##############################################################################################################################################################
 FROM setup_conda_env as build_relion
@@ -189,15 +196,17 @@ ENV TORCH_HOME=${TORCH_HOME}
 
 WORKDIR ${TEMP_BUILD_DIR}
 
+ARG CONTAINER_RELION_CONDA_DIR
 ARG CONTAINER_RELION_INSTALL_DIR
 ARG RELION_CUDA_ARCH
+ARG RELION_CUDA_ON_OFF
 
 # Install RELION to /usr/local/apps/relion-v5.0-beta
 # Add -DAMDFFTW=ON to the following (if AMD CPU)
 RUN cmake \
 -DCMAKE_INSTALL_PREFIX="${CONTAINER_RELION_INSTALL_DIR}" \
 -DFORCE_OWN_FFTW=ON -DFORCE_OWN_FLTK=ON \
--DPYTHON_EXE_PATH="${RELION_CONDA_DIR}/bin/python" \
+-DPYTHON_EXE_PATH="${CONTAINER_RELION_CONDA_DIR}/bin/python" \
 -DTORCH_HOME_PATH="${TORCH_HOME}" \
 -DCMAKE_CXX_FLAGS="-pthread"  -DDoublePrec_GPU=OFF -DDoublePrec_CPU=ON  \
 -DCMAKE_SHARED_LINKER_FLAGS="-lpthread" \
@@ -277,10 +286,9 @@ ENV PATH="${CONTAINER_PYENV_DIR}/bin:${PATH}"
 ARG CONTAINER_CONDA_DIR="${CONTAINER_PYENV_DIR}/versions/miniforge3-22.9.0-3"
 ENV PATH="${CONTAINER_CONDA_DIR}/bin:${PATH}"
 
-ARG CONTAINER_RELION_ENV_NAME
-ARG RELION_CONDA_DIR="${CONTAINER_CONDA_DIR}/envs/${CONTAINER_RELION_ENV_NAME}"
-ENV PATH="${RELION_CONDA_DIR}/bin:${PATH}"
-ENV LD_LIBRARY_PATH="${RELION_CONDA_DIR}/lib:${LD_LIBRARY_PATH}"
+ARG CONTAINER_RELION_CONDA_DIR
+ENV PATH="${CONTAINER_RELION_CONDA_DIR}/bin:${PATH}"
+ENV LD_LIBRARY_PATH="${CONTAINER_RELION_CONDA_DIR}/lib:${LD_LIBRARY_PATH}"
 
 # Default CTFFIND-4.1+ executable
 ARG CONTAINER_CTFFIND_DIR
