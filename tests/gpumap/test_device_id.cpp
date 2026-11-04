@@ -1,5 +1,5 @@
 // Test for src/acc/device_id.{h,cpp}.
-// CUDA:   nvcc -x cu -D_CUDA_ENABLED -I. -o t tests/gpumap/test_device_id.cpp -x cu src/acc/device_id.cpp -lcuda
+// CUDA:   nvcc -x cu -D_CUDA_ENABLED -I. -o t tests/gpumap/test_device_id.cpp -x cu src/acc/device_id.cpp
 // no GPU: g++ -std=c++11 -I. -o t tests/gpumap/test_device_id.cpp src/acc/device_id.cpp   (env and index sources only)
 #include "src/acc/device_id.h"
 #include <cassert>

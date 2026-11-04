@@ -276,8 +276,7 @@ if (CUDAToolkit_FOUND)
 	endif()
 
 	target_link_libraries(relion_lib PUBLIC relion_gpu_util relion_jaz_gpu_util)
-	# CUDA::cuda_driver: cuDeviceGetUuid_v2 for MIG-aware device identification (src/acc/acc_device_id.h)
-	target_link_libraries(relion_lib PUBLIC CUDA::cudart CUDA::cufft CUDA::curand CUDA::cuda_driver)
+	target_link_libraries(relion_lib PUBLIC CUDA::cudart CUDA::cufft CUDA::curand)
 
 elseif (HIP_FOUND)
 	file(GLOB REL_HIP_SRC "${CMAKE_SOURCE_DIR}/src/acc/hip/*.cpp" "${CMAKE_SOURCE_DIR}/src/acc/hip/hip_kernels/*.cpp" )

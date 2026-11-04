@@ -25,23 +25,45 @@ namespace
 #endif
 
 #ifdef _CUDA_ENABLED
-	/// CUDA driver UUID. cuDeviceGetUuid_v2 returns the MIG instance's UUID; the v1 call would
-	/// return the parent GPU's UUID for every MIG slice of that GPU.
+	/// Driver API function looked up through the CUDA runtime, so RELION does not link libcuda
+	/// (binaries of a CUDA build keep starting on machines without an NVIDIA driver, as upstream).
+	/// Requested at driver API version 11.4: there cuDeviceGetUuid is the MIG-aware variant (_v2).
+	void *driverFunction(const char *symbol)
+	{
+		void *function = NULL;
+		cudaDriverEntryPointQueryResult found;
+	#if CUDART_VERSION >= 12050
+		if (cudaGetDriverEntryPointByVersion(symbol, &function, 11040, cudaEnableDefault, &found) != cudaSuccess)
+			return NULL;
+	#elif CUDART_VERSION >= 11040
+		if (cudaGetDriverEntryPoint(symbol, &function, cudaEnableDefault, &found) != cudaSuccess)
+			return NULL;
+	#else
+		(void)symbol;
+		return NULL;
+	#endif
+		return (found == cudaDriverEntryPointSuccess) ? function : NULL;
+	}
+
+	/// CUDA driver UUID of the device. For a MIG slice this is the slice's own UUID; the pre-11.4
+	/// call would return the parent GPU's UUID for every slice of that GPU.
 	class CudaUuidDeviceIdSource : public DeviceIdSource
 	{
 	public:
 		std::string name() const { return "uuid"; }
 		std::string identify(int deviceIndex) const
 		{
+			typedef CUresult (*DeviceGetFn)(CUdevice *, int);
+			typedef CUresult (*DeviceGetUuidFn)(CUuuid *, CUdevice);
+			int runtimeDeviceCount = 0;
+			if (cudaGetDeviceCount(&runtimeDeviceCount) != cudaSuccess) // initialises the driver
+				return "";
+			DeviceGetFn deviceGet = reinterpret_cast<DeviceGetFn>(driverFunction("cuDeviceGet"));
+			DeviceGetUuidFn deviceGetUuid = reinterpret_cast<DeviceGetUuidFn>(driverFunction("cuDeviceGetUuid"));
 			CUdevice device;
 			CUuuid uuid;
-			if (cuInit(0) != CUDA_SUCCESS || cuDeviceGet(&device, deviceIndex) != CUDA_SUCCESS)
-				return "";
-	#if CUDA_VERSION >= 11040
-			if (cuDeviceGetUuid_v2(&uuid, device) != CUDA_SUCCESS)
-	#else
-			if (cuDeviceGetUuid(&uuid, device) != CUDA_SUCCESS)
-	#endif
+			if (deviceGet == NULL || deviceGetUuid == NULL
+			    || deviceGet(&device, deviceIndex) != CUDA_SUCCESS || deviceGetUuid(&uuid, device) != CUDA_SUCCESS)
 				return "";
 			return formatUuid(reinterpret_cast<const unsigned char *>(uuid.bytes));
 		}
