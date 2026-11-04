@@ -18,6 +18,21 @@
  * author citations must be preserved.
  ***************************************************************************/
 #include "src/pipeline_jobs.h"
+#include <algorithm>
+
+// Site-configurable GUI defaults (unset = upstream defaults).
+// RELION_DEFAULT_USE_GPU: default of "Use GPU acceleration?" (upstream: No)
+static bool envDefaultUseGpu()
+{
+	const char *v = getenv("RELION_DEFAULT_USE_GPU");
+	return (v == NULL) ? false : textToBool(v);
+}
+// RELION_DEFAULT_NR_POOL: default of "Number of pooled particles" (upstream: 3; slider max grows with it)
+static float envDefaultNrPool()
+{
+	const char *v = getenv("RELION_DEFAULT_NR_POOL");
+	return (v == NULL) ? 3.f : (float)textToInteger(v);
+}
 
 std::vector<Node> getOutputNodesRefine(std::string outputname, std::string jobtype, int iter, int K, int dim, int nr_bodies, bool _is_tomo)
 {
@@ -592,8 +607,9 @@ bool RelionJob::saveJobSubmissionScript(std::string newfilename, std::string out
 		fh.seekg(0, std::ios::beg);
 		std::string line;
 		std::map<std::string, std::string> replacing;
-		replacing["XXXnodespreadXXX"] = joboptions["nodespread"].getString();
+		// job type, so that a site's submission script can choose resources per job type
 		replacing["XXXjobtypeXXX"] = std::to_string(type);
+		replacing["XXXjobtypenameXXX"] = (proc_type2dirname.count(type) ? proc_type2dirname.at(type) : std::string("Unknown"));
 		replacing["XXXmpinodesXXX"] = floatToString(nmpi);
 		replacing["XXXthreadsXXX"] = floatToString(nthr);
 		replacing["XXXcoresXXX"] = floatToString(ncores);
@@ -727,7 +743,7 @@ bool RelionJob::prepareFinalCommand(std::string &outputname, std::vector<std::st
 
 		if (!saveJobSubmissionScript(output_script, outputname, commands, error_message))
 			return false;
-		final_command = std::string(getenv ("RELION_QSUB_COMMAND")) + " " + output_script + " &";
+		final_command = joboptions["qsub"].getString() + " " + output_script + " &";
 	}
 	else
 	{
@@ -987,13 +1003,29 @@ When set to 1, no multi-threading will be used. The maximum can be set through t
 
 	const char * use_queue_input = getenv("RELION_QUEUE_USE");
 	bool use_queue = (use_queue_input == NULL) ? DEFAULTQUEUEUSE : textToBool(use_queue_input);
-		
-	const int TYPES_DEFAULT_USE_QUEUE[] = { PROC_MOTIONCORR, PROC_CTFFIND, PROC_AUTOPICK, PROC_EXTRACT, PROC_2DCLASS, PROC_3DCLASS, PROC_3DAUTO, PROC_MASKCREATE, PROC_SUBTRACT, PROC_POST, PROC_INIMODEL, PROC_MULTIBODY, PROC_MOTIONREFINE, PROC_CTFREFINE, PROC_DYNAMIGHT, PROC_MODELANGELO, PROC_TOMO_SUBTOMO, PROC_TOMO_CTFREFINE, PROC_TOMO_ALIGN, PROC_TOMO_RECONSTRUCT, PROC_TOMO_ALIGN_TILTSERIES, PROC_TOMO_RECONSTRUCT_TOMOGRAM, PROC_TOMO_DENOISE_TOMOGRAM };
-	bool job_use_queue = std::find(std::begin(TYPES_DEFAULT_USE_QUEUE), std::end(TYPES_DEFAULT_USE_QUEUE), type) != std::end(TYPES_DEFAULT_USE_QUEUE);
-	use_queue = use_queue && job_use_queue;
-	
+
+	// RELION_QUEUE_JOB_TYPES: comma-separated job directory names (e.g. "MotionCorr,CtfFind,Class2D").
+	// If set, only these job types default to "Submit to queue? Yes"; all others run locally.
+	// If unset, RELION_QUEUE_USE applies to every job type (upstream behaviour).
+	const char * queue_types_input = getenv("RELION_QUEUE_JOB_TYPES");
+	if (use_queue && queue_types_input != NULL)
+	{
+		const std::string my_dirname = proc_type2dirname.count(type) ? proc_type2dirname.at(type) : std::string();
+		bool listed = false;
+		std::stringstream ss(queue_types_input);
+		std::string item;
+		while (std::getline(ss, item, ','))
+		{
+			item.erase(0, item.find_first_not_of(" \t"));
+			item.erase(item.find_last_not_of(" \t") + 1);
+			if (!item.empty() && item == my_dirname) listed = true;
+		}
+		use_queue = listed;
+	}
+
 	joboptions["do_queue"] = JobOption("Submit to queue?", use_queue, "If set to Yes, the job will be submit to a queue, otherwise \
-the job will be executed locally. Note that only MPI jobs may be sent to a queue. The default can be set through the environment variable RELION_QUEUE_USE.");
+the job will be executed locally. Note that only MPI jobs may be sent to a queue. The default can be set through the environment variable RELION_QUEUE_USE, \
+restricted to the job types listed in RELION_QUEUE_JOB_TYPES. Unless the GUI was started with --expert, this choice is not shown.");
 
 	// Check for environment variable RELION_QUEUE_NAME
 	const char * default_queue = getenv("RELION_QUEUE_NAME");
@@ -1012,9 +1044,10 @@ the job will be executed locally. Note that only MPI jobs may be sent to a queue
 		default_command = DEFAULTQSUBCOMMAND;
 	}
 
-	joboptions["nodespread"] = JobOption("Node spread option:", std::string("auto"), "auto=normal\nnormal - do not force it either way\nmin - use minimal number of nodes\nmax - spread to as many nodes as possible\nfull - always allocate entire nodes"); //comment out rest \
+	joboptions["qsub"] = JobOption("Queue submit command:", std::string(default_command), "Name of the command used to submit scripts to the queue, e.g. qsub or bsub.\n\n\
 Note that the person who installed RELION should have made a custom script for your cluster/queue setup. Check this is the case \
-(or create your own script following the RELION Wiki) if you have trouble submitting jobs. The default command can be set through the environment variable RELION_QSUB_COMMAND.");
+(or create your own script following the RELION Wiki) if you have trouble submitting jobs. The default command can be set through the environment variable RELION_QSUB_COMMAND. \
+Unless the GUI was started with --expert, this field is not shown and the default is used.");
 
 	// additional options that may be set through environment variables RELION_QSUB_EXTRAi and RELION_QSUB_EXTRAi (for more flexibility)
 	char * extra_count_text = getenv("RELION_QSUB_EXTRA_COUNT");
@@ -1045,7 +1078,31 @@ Note that the person who installed RELION should have made a custom script for y
 			{
 				txt=std::string(extra_help);
 			}
-			joboptions[std::string("qsub_extra")+i_str] = JobOption(std::string(extra_text), std::string(extra_default), txt.c_str());
+			// RELION_QSUB_EXTRAi_OPTIONS="a,b,c" turns the free-text field into a drop-down menu
+			// (default: RELION_QSUB_EXTRAi_DEFAULT if it is one of the options, else the first option)
+			const std::string query_options=std::string("RELION_QSUB_EXTRA")+i_str+"_OPTIONS";
+			char *extra_options = getenv(query_options.c_str());
+			std::vector<std::string> option_list;
+			if (extra_options != NULL)
+			{
+				std::stringstream ss(extra_options);
+				std::string item;
+				while (std::getline(ss, item, ','))
+				{
+					item.erase(0, item.find_first_not_of(" \t"));
+					item.erase(item.find_last_not_of(" \t") + 1);
+					if (!item.empty()) option_list.push_back(item);
+				}
+			}
+			if (!option_list.empty())
+			{
+				int idefault = 0;
+				for (int j = 0; j < option_list.size(); j++)
+					if (option_list[j] == std::string(extra_default)) idefault = j;
+				joboptions[std::string("qsub_extra")+i_str] = JobOption(std::string(extra_text), option_list, idefault, txt);
+			}
+			else
+				joboptions[std::string("qsub_extra")+i_str] = JobOption(std::string(extra_text), std::string(extra_default), txt.c_str());
 		}
 	}
 
@@ -2044,7 +2101,7 @@ The samplings are approximate numbers and vary slightly over the sphere.\n\n For
 
 	joboptions["shrink"] = JobOption("Shrink factor:", 0, 0, 1, 0.1, "This is useful to speed up the calculations, and to make them less memory-intensive. The micrographs will be downscaled (shrunk) to calculate the cross-correlations, and peak searching will be done in the downscaled FOM maps. When set to 0, the micrographs will de downscaled to the lowpass filter of the references, a value between 0 and 1 will downscale the micrographs by that factor. Note that the results will not be exactly the same when you shrink micrographs!\
 \n\nIn the Laplacian-of-Gaussian picker, this option is ignored and the shrink factor always becomes 0.");
-	joboptions["use_gpu"] = JobOption("Use GPU acceleration?", true, "If set to Yes, the job will try to use GPU acceleration. The Laplacian-of-Gaussian picker does not support GPU.");
+	joboptions["use_gpu"] = JobOption("Use GPU acceleration?", envDefaultUseGpu(), "If set to Yes, the job will try to use GPU acceleration. The Laplacian-of-Gaussian picker does not support GPU.");
 	joboptions["gpu_ids"] = JobOption("Which GPUs to use:", std::string(""), "This argument is not necessary. If left empty, the job itself will try to allocate available GPU resources. You can override the default allocation by providing a list of which GPUs (0,1,2,3, etc) to use. MPI-processes are separated by ':'. For example: 0:1:0:1:0:1");
 
 	joboptions["do_pick_helical_segments"] = JobOption("Pick 2D helical segments?", false, "Set to Yes if you want to pick 2D helical segments. Note this will run the old algorithms for reference-based helical segment picking, as described by He & Scheres, J Struct Biol, 2017. Often, we now run filament picking from the Topaz tab instead....");
@@ -3213,7 +3270,7 @@ A range of 15 degrees is the same as sigma = 5 degrees. Note that the ranges of 
 	joboptions["helical_rise"] = JobOption("Helical rise (A):", 4.75, -1, 100, 1, "The helical rise (in Angstroms). Translational offsets along the helical axis will be limited from -rise/2 to +rise/2, with a flat prior.");
 
 
-	joboptions["nr_pool"] = JobOption("Number of pooled particles:", 30, 1, 50, 1, "Particles are processed in individual batches by MPI followers. During each batch, a stack of particle images is only opened and closed once to improve disk access times. \
+	joboptions["nr_pool"] = JobOption("Number of pooled particles:", envDefaultNrPool(), 1, std::max(16.f, envDefaultNrPool()), 1, "Particles are processed in individual batches by MPI followers. During each batch, a stack of particle images is only opened and closed once to improve disk access times. \
 All particle images of a single batch are read into memory together. The size of these batches is at least one particle per thread used. The nr_pooled_particles parameter controls how many particles are read together for each thread. If it is set to 3 and one uses 8 threads, batches of 3x8=24 particles will be read together. \
 This may improve performance on systems where disk access, and particularly metadata handling of disk access, is a problem. It has a modest cost of increased RAM usage.");
 	joboptions["do_parallel_discio"] = JobOption("Use parallel disc I/O?", true, "If set to Yes, all MPI followers will read images from disc. \
@@ -3232,7 +3289,7 @@ Provided this directory is on a fast local drive (e.g. an SSD drive), processing
 All MPI salves will then read in the combined results. This reduces heavy load on the network, but increases load on the disc I/O. \
 This will affect the time it takes between the progress-bar in the expectation step reaching its end (the mouse gets to the cheese) and the start of the ensuing maximisation step. It will depend on your system setup which is most efficient.");
 
-	joboptions["use_gpu"] = JobOption("Use GPU acceleration?", true, "If set to Yes, the job will try to use GPU acceleration.");
+	joboptions["use_gpu"] = JobOption("Use GPU acceleration?", envDefaultUseGpu(), "If set to Yes, the job will try to use GPU acceleration.");
 	joboptions["gpu_ids"] = JobOption("Which GPUs to use:", std::string(""), "This argument is not necessary. If left empty, the job itself will try to allocate available GPU resources. You can override the default allocation by providing a list of which GPUs (0,1,2,3, etc) to use. MPI-processes are separated by ':', threads by ','. For example: '0,0:1,1:0,0:1,1'");
 }
 
@@ -3495,7 +3552,7 @@ Therefore, this option is not generally recommended: try increasing amplitude co
 
 	joboptions["do_parallel_discio"] = JobOption("Use parallel disc I/O?", true, "If set to Yes, all MPI followers will read their own images from disc. \
 Otherwise, only the leader will read images and send them through the network to the followers. Parallel file systems like gluster of fhgfs are good at parallel disc I/O. NFS may break with many followers reading in parallel. If your datasets contain particles with different box sizes, you have to say Yes.");
-	joboptions["nr_pool"] = JobOption("Number of pooled particles:", 30, 1, 50, 1, "Particles are processed in individual batches by MPI followers. During each batch, a stack of particle images is only opened and closed once to improve disk access times. \
+	joboptions["nr_pool"] = JobOption("Number of pooled particles:", envDefaultNrPool(), 1, std::max(16.f, envDefaultNrPool()), 1, "Particles are processed in individual batches by MPI followers. During each batch, a stack of particle images is only opened and closed once to improve disk access times. \
 All particle images of a single batch are read into memory together. The size of these batches is at least one particle per thread used. The nr_pooled_particles parameter controls how many particles are read together for each thread. If it is set to 3 and one uses 8 threads, batches of 3x8=24 particles will be read together. \
 This may improve performance on systems where disk access, and particularly metadata handling of disk access, is a problem. It has a modest cost of increased RAM usage.");
 	joboptions["do_preread_images"] = JobOption("Pre-read all particles into RAM?", false, "If set to Yes, all particle images will be read into computer memory, which will greatly speed up calculations on systems with slow disk access. However, one should of course be careful with the amount of RAM available. \
@@ -3512,7 +3569,7 @@ Provided this directory is on a fast local drive (e.g. an SSD drive), processing
 All MPI salves will then read in the combined results. This reduces heavy load on the network, but increases load on the disc I/O. \
 This will affect the time it takes between the progress-bar in the expectation step reaching its end (the mouse gets to the cheese) and the start of the ensuing maximisation step. It will depend on your system setup which is most efficient.");
 
-	joboptions["use_gpu"] = JobOption("Use GPU acceleration?", true, "If set to Yes, the job will try to use GPU acceleration.");
+	joboptions["use_gpu"] = JobOption("Use GPU acceleration?", envDefaultUseGpu(), "If set to Yes, the job will try to use GPU acceleration.");
 	joboptions["gpu_ids"] = JobOption("Which GPUs to use:", std::string(""), "This argument is not necessary. If left empty, the job itself will try to allocate available GPU resources. You can override the default allocation by providing a list of which GPUs (0,1,2,3, etc) to use. MPI-processes are separated by ':', threads by ','. For example: '0,0:1,1:0,0:1,1'");
 }
 
@@ -3896,7 +3953,7 @@ Values of ~ 2.0 are recommended for the range. Set the range to negative to disa
 
 	joboptions["do_parallel_discio"] = JobOption("Use parallel disc I/O?", true, "If set to Yes, all MPI followers will read their own images from disc. \
 Otherwise, only the leader will read images and send them through the network to the followers. Parallel file systems like gluster of fhgfs are good at parallel disc I/O. NFS may break with many followers reading in parallel. If your datasets contain particles with different box sizes, you have to say Yes.");
-	joboptions["nr_pool"] = JobOption("Number of pooled particles:", 30, 1, 50, 1, "Particles are processed in individual batches by MPI followers. During each batch, a stack of particle images is only opened and closed once to improve disk access times. \
+	joboptions["nr_pool"] = JobOption("Number of pooled particles:", envDefaultNrPool(), 1, std::max(16.f, envDefaultNrPool()), 1, "Particles are processed in individual batches by MPI followers. During each batch, a stack of particle images is only opened and closed once to improve disk access times. \
 All particle images of a single batch are read into memory together. The size of these batches is at least one particle per thread used. The nr_pooled_particles parameter controls how many particles are read together for each thread. If it is set to 3 and one uses 8 threads, batches of 3x8=24 particles will be read together. \
 This may improve performance on systems where disk access, and particularly metadata handling of disk access, is a problem. It has a modest cost of increased RAM usage.");
 	joboptions["do_pad1"] = JobOption("Skip padding?", false, "If set to Yes, the calculations will not use padding in Fourier space for better interpolation in the references. Otherwise, references are padded 2x before Fourier transforms are calculated. Skipping padding (i.e. use --pad 1) gives nearly as good results as using --pad 2, but some artifacts may appear in the corners from signal that is folded back.");
@@ -3914,7 +3971,7 @@ Provided this directory is on a fast local drive (e.g. an SSD drive), processing
 All MPI salves will then read in the combined results. This reduces heavy load on the network, but increases load on the disc I/O. \
 This will affect the time it takes between the progress-bar in the expectation step reaching its end (the mouse gets to the cheese) and the start of the ensuing maximisation step. It will depend on your system setup which is most efficient.");
 
-	joboptions["use_gpu"] = JobOption("Use GPU acceleration?", true, "If set to Yes, the job will try to use GPU acceleration.");
+	joboptions["use_gpu"] = JobOption("Use GPU acceleration?", envDefaultUseGpu(), "If set to Yes, the job will try to use GPU acceleration.");
 	joboptions["gpu_ids"] = JobOption("Which GPUs to use:", std::string(""), "This argument is not necessary. If left empty, the job itself will try to allocate available GPU resources. You can override the default allocation by providing a list of which GPUs (0,1,2,3, etc) to use. MPI-processes are separated by ':', threads by ','.  For example: '0,0:1,1:0,0:1,1'");
 }
 
@@ -4388,7 +4445,7 @@ Values of ~ 2.0 are recommended for the range. Set the range to negative to disa
 
 	joboptions["do_parallel_discio"] = JobOption("Use parallel disc I/O?", true, "If set to Yes, all MPI followers will read their own images from disc. \
 Otherwise, only the leader will read images and send them through the network to the followers. Parallel file systems like gluster of fhgfs are good at parallel disc I/O. NFS may break with many followers reading in parallel. If your datasets contain particles with different box sizes, you have to say Yes.");
-	joboptions["nr_pool"] = JobOption("Number of pooled particles:", 30, 1, 50, 1, "Particles are processed in individual batches by MPI followers. During each batch, a stack of particle images is only opened and closed once to improve disk access times. \
+	joboptions["nr_pool"] = JobOption("Number of pooled particles:", envDefaultNrPool(), 1, std::max(16.f, envDefaultNrPool()), 1, "Particles are processed in individual batches by MPI followers. During each batch, a stack of particle images is only opened and closed once to improve disk access times. \
 All particle images of a single batch are read into memory together. The size of these batches is at least one particle per thread used. The nr_pooled_particles parameter controls how many particles are read together for each thread. If it is set to 3 and one uses 8 threads, batches of 3x8=24 particles will be read together. \
 This may improve performance on systems where disk access, and particularly metadata handling of disk access, is a problem. It has a modest cost of increased RAM usage.");
 	joboptions["do_pad1"] = JobOption("Skip padding?", false, "If set to Yes, the calculations will not use padding in Fourier space for better interpolation in the references. Otherwise, references are padded 2x before Fourier transforms are calculated. Skipping padding (i.e. use --pad 1) gives nearly as good results as using --pad 2, but some artifacts may appear in the corners from signal that is folded back.");
@@ -4405,7 +4462,7 @@ Provided this directory is on a fast local drive (e.g. an SSD drive), processing
 	joboptions["do_combine_thru_disc"] = JobOption("Combine iterations through disc?", false, "If set to Yes, at the end of every iteration all MPI followers will write out a large file with their accumulated results. The MPI leader will read in all these files, combine them all, and write out a new file with the combined results. \
 All MPI salves will then read in the combined results. This reduces heavy load on the network, but increases load on the disc I/O. \
 This will affect the time it takes between the progress-bar in the expectation step reaching its end (the mouse gets to the cheese) and the start of the ensuing maximisation step. It will depend on your system setup which is most efficient.");
-	joboptions["use_gpu"] = JobOption("Use GPU acceleration?", true, "If set to Yes, the job will try to use GPU acceleration.");
+	joboptions["use_gpu"] = JobOption("Use GPU acceleration?", envDefaultUseGpu(), "If set to Yes, the job will try to use GPU acceleration.");
 	joboptions["gpu_ids"] = JobOption("Which GPUs to use:", std::string(""), "This argument is not necessary. If left empty, the job itself will try to allocate available GPU resources. You can override the default allocation by providing a list of which GPUs (0,1,2,3, etc) to use. MPI-processes are separated by ':', threads by ','.  For example: '0,0:1,1:0,0:1,1'");
 }
 
@@ -4768,7 +4825,7 @@ Note that this will only be the value for the first few iteration(s): the sampli
 
 	joboptions["do_parallel_discio"] = JobOption("Use parallel disc I/O?", true, "If set to Yes, all MPI followers will read their own images from disc. \
 Otherwise, only the leader will read images and send them through the network to the followers. Parallel file systems like gluster of fhgfs are good at parallel disc I/O. NFS may break with many followers reading in parallel. If your datasets contain particles with different box sizes, you have to say Yes.");
-	joboptions["nr_pool"] = JobOption("Number of pooled particles:", 30, 1, 50, 1, "Particles are processed in individual batches by MPI followers. During each batch, a stack of particle images is only opened and closed once to improve disk access times. \
+	joboptions["nr_pool"] = JobOption("Number of pooled particles:", envDefaultNrPool(), 1, std::max(16.f, envDefaultNrPool()), 1, "Particles are processed in individual batches by MPI followers. During each batch, a stack of particle images is only opened and closed once to improve disk access times. \
 All particle images of a single batch are read into memory together. The size of these batches is at least one particle per thread used. The nr_pooled_particles parameter controls how many particles are read together for each thread. If it is set to 3 and one uses 8 threads, batches of 3x8=24 particles will be read together. \
 This may improve performance on systems where disk access, and particularly metadata handling of disk access, is a problem. It has a modest cost of increased RAM usage.");
 	joboptions["do_pad1"] = JobOption("Skip padding?", false, "If set to Yes, the calculations will not use padding in Fourier space for better interpolation in the references. Otherwise, references are padded 2x before Fourier transforms are calculated. Skipping padding (i.e. use --pad 1) gives nearly as good results as using --pad 2, but some artifacts may appear in the corners from signal that is folded back.");
@@ -4785,7 +4842,7 @@ Provided this directory is on a fast local drive (e.g. an SSD drive), processing
 	joboptions["do_combine_thru_disc"] = JobOption("Combine iterations through disc?", false, "If set to Yes, at the end of every iteration all MPI followers will write out a large file with their accumulated results. The MPI leader will read in all these files, combine them all, and write out a new file with the combined results. \
 All MPI salves will then read in the combined results. This reduces heavy load on the network, but increases load on the disc I/O. \
 This will affect the time it takes between the progress-bar in the expectation step reaching its end (the mouse gets to the cheese) and the start of the ensuing maximisation step. It will depend on your system setup which is most efficient.");
-	joboptions["use_gpu"] = JobOption("Use GPU acceleration?", true, "If set to Yes, the job will try to use GPU acceleration.");
+	joboptions["use_gpu"] = JobOption("Use GPU acceleration?", envDefaultUseGpu(), "If set to Yes, the job will try to use GPU acceleration.");
 	joboptions["gpu_ids"] = JobOption("Which GPUs to use:", std::string(""), "This argument is not necessary. If left empty, the job itself will try to allocate available GPU resources. You can override the default allocation by providing a list of which GPUs (0,1,2,3, etc) to use. MPI-processes are separated by ':', threads by ','.  For example: '0,0:1,1:0,0:1,1'");
 }
 

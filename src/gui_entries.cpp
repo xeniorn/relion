@@ -279,6 +279,17 @@ void GuiEntry::deactivate(bool do_deactivate)
 
 }
 
+void GuiEntry::hide(bool do_hide)
+{
+	Fl_Widget *widgets[] = { inp, help, browse, choice, menu, slider };
+	for (int i = 0; i < 6; i++)
+	{
+		if (widgets[i] == NULL) continue;
+		if (do_hide) widgets[i]->hide();
+		else widgets[i]->show();
+	}
+}
+
 // Help button call-back functions
 void GuiEntry::cb_help(Fl_Widget* o, void* v)
 {

@@ -151,13 +151,30 @@ void JobWindow::setupRunTab()
 	queue_group = new Fl_Group(WCOL0,  MENUHEIGHT, 550, 600-MENUHEIGHT, "");
 	queue_group->end();
 
+	// Expert mode (relion --expert, or RELION_GUI_EXPERT=1) shows "Submit to queue?" and the submit command.
+	// Otherwise RELION decides by job type (RELION_QUEUE_USE, RELION_QUEUE_JOB_TYPES) and only says what it will do.
+	const char *expert_env = getenv("RELION_GUI_EXPERT");
+	const bool is_expert = (expert_env != NULL && textToBool(expert_env));
+
+	const int queue_row_y = current_y;
 	place("do_queue", TOGGLE_LEAVE_ACTIVE, queue_group);
+	if (!is_expert)
+	{
+		guientries["do_queue"].hide();
+		const bool will_submit = myjob.joboptions["do_queue"].getBoolean();
+		Fl_Box *queue_info = new Fl_Box(XCOL1, queue_row_y, WCOL1 + WCOL2 + WCOL3, STEPY,
+			will_submit ? "This job will be submitted to the cluster queue." : "This job will run locally (not submitted to the cluster queue).");
+		queue_info->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
+		queue_info->labelsize(ENTRY_FONTSIZE);
+		queue_info->labelfont(FL_BOLD);
+	}
 
 	queue_group->begin();
 
 	place("queuename");
 
-	place("nodespread");
+	if (is_expert)
+		place("qsub");
 
 	char * extra_count_text = getenv ("RELION_QSUB_EXTRA_COUNT");
 	const char extra_count_val = (extra_count_text ? atoi(extra_count_text) : 2);
