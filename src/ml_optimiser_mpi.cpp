@@ -21,8 +21,10 @@
 #include "src/ml_optimiser.h"
 #ifdef _CUDA_ENABLED
 	#include "src/acc/cuda/cuda_ml_optimiser.h"
+	#include "src/acc/acc_device_id.h"
 #elif _HIP_ENABLED
 	#include "src/acc/hip/hip_ml_optimiser.h"
+	#include "src/acc/acc_device_id.h"
 #elif _SYCL_ENABLED
     #include <vector>
 	#include <cstring>
@@ -328,6 +330,9 @@ void MlOptimiserMpi::initialise()
             int devCount = gpuDevices.size();
             node->relion_MPI_Send(&devCount, 1, MPI_INT, 0, MPITAG_INT, MPI_COMM_WORLD);
 
+            int runtimeDevCount(0);
+            HANDLE_ERROR(accGPUGetDeviceCount(&runtimeDevCount));
+
             for (int i = 0; i < devCount; i++)
             {
                 char buffer[BUFSIZ];
@@ -336,7 +341,9 @@ void MlOptimiserMpi::initialise()
 				std::string didS(buffer, len);
 				std::stringstream didSs;
 
-				didSs << "Device " << gpuDevices[i] << " on " << didS;
+				// Identify the physical device (or MIG instance), not "index on host": with per-rank
+				// GPU binding every rank sees its own GPU as index 0 (see src/acc/acc_device_id.h).
+				didSs << "Device " << getAccPersistentDeviceId(gpuDevices[i], runtimeDevCount, didS);
 				didS = didSs.str();
 
 //				std::cout << "SENDING: " << didS << std::endl;
