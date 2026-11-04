@@ -14,6 +14,7 @@
 
 namespace
 {
+#if defined(_CUDA_ENABLED) || defined(_HIP_ENABLED)
 	std::string formatUuid(const unsigned char *b)
 	{
 		char s[48];
@@ -21,6 +22,7 @@ namespace
 		         b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]);
 		return s;
 	}
+#endif
 
 #ifdef _CUDA_ENABLED
 	/// CUDA driver UUID. cuDeviceGetUuid_v2 returns the MIG instance's UUID; the v1 call would
