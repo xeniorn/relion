@@ -64,6 +64,7 @@ int main(int argc, char *argv[])
 			std::cerr << " [--tomo]       : show tomography-specific GUI" << std::endl;
 			std::cerr << " [--ccpem]      : use the ccpem pipeliner" << std::endl;
 			std::cerr << " [--do_projdir] : Don't confirm the creation of a new project directory, just make it if it doesn't exist" << std::endl;
+			std::cerr << " [--expert]     : show 'Submit to queue?' and the queue submit command (also: RELION_GUI_EXPERT=1)" << std::endl;
 			std::cerr << " [--version]    : show the version of this program" << std::endl;
 			exit(0);
 		}
@@ -80,6 +81,9 @@ int main(int argc, char *argv[])
 		bool _do_tomo = checkParameter(argc, argv, "--tomo");
 		bool _use_ccpem_pipeliner = checkParameter(argc, argv, "--ccpem");
 		bool _do_projdir = checkParameter(argc, argv, "--do_projdir");
+		// Expert mode: the job windows read RELION_GUI_EXPERT (see JobWindow::setupRunTab)
+		if (checkParameter(argc, argv, "--expert"))
+			setenv("RELION_GUI_EXPERT", "1", 1);
 		GuiMainWindow window(GUIWIDTH, GUIHEIGHT_EXT, titletext, fn_pipe, _update_every_sec, _exit_after_sec, _do_read_only, _do_tomo, _use_ccpem_pipeliner, _do_projdir);
 
 		// Show and run the window

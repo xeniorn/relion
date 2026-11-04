@@ -247,6 +247,9 @@ public:
     // Deactivate this entry if the input boolean is true
     void deactivate(bool do_deactivate = true);
 
+    // Hide (or show again) all widgets of this entry
+    void hide(bool do_hide = true);
+
     /** Call-back functions for the help button
      *  The method of using two functions of static void and inline void was copied from:
      *  http://www3.telus.net/public/robark/
