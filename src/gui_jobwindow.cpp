@@ -173,6 +173,8 @@ void JobWindow::setupRunTab()
 
 	place("queuename");
 
+	place("nodespread");
+
 	if (is_expert)
 		place("qsub");
 

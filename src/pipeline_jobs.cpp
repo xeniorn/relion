@@ -20,18 +20,42 @@
 #include "src/pipeline_jobs.h"
 #include <algorithm>
 
-// Site-configurable GUI defaults (unset = upstream defaults).
-// RELION_DEFAULT_USE_GPU: default of "Use GPU acceleration?" (upstream: No)
+// GUI defaults of this build; each can be overridden through the environment.
+// RELION_DEFAULT_USE_GPU: default of "Use GPU acceleration?" (built-in: Yes; upstream: No)
 static bool envDefaultUseGpu()
 {
 	const char *v = getenv("RELION_DEFAULT_USE_GPU");
-	return (v == NULL) ? false : textToBool(v);
+	return (v == NULL) ? true : textToBool(v);
 }
-// RELION_DEFAULT_NR_POOL: default of "Number of pooled particles" (upstream: 3; slider max grows with it)
+// RELION_DEFAULT_NR_POOL: default of "Number of pooled particles" (built-in: 30; upstream: 3); the slider max grows with it
 static float envDefaultNrPool()
 {
 	const char *v = getenv("RELION_DEFAULT_NR_POOL");
-	return (v == NULL) ? 3.f : (float)textToInteger(v);
+	return (v == NULL) ? 30.f : (float)textToInteger(v);
+}
+
+// Job types that default to "Submit to queue? Yes" (by job directory name). Compute jobs go to the queue;
+// interactive and light jobs (import, manual pick, select, join star files, ...) run locally.
+// Override with RELION_QUEUE_JOB_TYPES="MotionCorr,CtfFind,..." or RELION_QUEUE_JOB_TYPES=all (upstream behaviour).
+static const char *DEFAULT_QUEUE_JOB_TYPES = "MotionCorr,CtfFind,AutoPick,Extract,Class2D,Class3D,Refine3D,MaskCreate,Subtract,PostProcess,InitialModel,MultiBody,Polish,CtfRefine,DynaMight,ModelAngelo,Reconstruct,AlignTiltSeries,Tomograms,Denoise";
+
+// Node spread choices for the submission script (XXXnodespreadXXX):
+// auto = normal; normal = don't force; min = as few nodes as possible; max = spread over as many nodes as possible;
+// full = whole nodes. Override with RELION_QSUB_NODESPREAD_OPTIONS="a,b,c" and RELION_QSUB_NODESPREAD_DEFAULT.
+static const char *DEFAULT_NODESPREAD_OPTIONS = "auto,normal,min,max,full";
+
+static std::vector<std::string> splitCommaList(const std::string &text)
+{
+	std::vector<std::string> out;
+	std::stringstream ss(text);
+	std::string item;
+	while (std::getline(ss, item, ','))
+	{
+		item.erase(0, item.find_first_not_of(" \t"));
+		item.erase(item.find_last_not_of(" \t") + 1);
+		if (!item.empty()) out.push_back(item);
+	}
+	return out;
 }
 
 std::vector<Node> getOutputNodesRefine(std::string outputname, std::string jobtype, int iter, int K, int dim, int nr_bodies, bool _is_tomo)
@@ -607,7 +631,8 @@ bool RelionJob::saveJobSubmissionScript(std::string newfilename, std::string out
 		fh.seekg(0, std::ios::beg);
 		std::string line;
 		std::map<std::string, std::string> replacing;
-		// job type, so that a site's submission script can choose resources per job type
+		replacing["XXXnodespreadXXX"] = joboptions["nodespread"].getString();
+		// job type, so that the submission script can choose resources per job type
 		replacing["XXXjobtypeXXX"] = std::to_string(type);
 		replacing["XXXjobtypenameXXX"] = (proc_type2dirname.count(type) ? proc_type2dirname.at(type) : std::string("Unknown"));
 		replacing["XXXmpinodesXXX"] = floatToString(nmpi);
@@ -1004,23 +1029,14 @@ When set to 1, no multi-threading will be used. The maximum can be set through t
 	const char * use_queue_input = getenv("RELION_QUEUE_USE");
 	bool use_queue = (use_queue_input == NULL) ? DEFAULTQUEUEUSE : textToBool(use_queue_input);
 
-	// RELION_QUEUE_JOB_TYPES: comma-separated job directory names (e.g. "MotionCorr,CtfFind,Class2D").
-	// If set, only these job types default to "Submit to queue? Yes"; all others run locally.
-	// If unset, RELION_QUEUE_USE applies to every job type (upstream behaviour).
+	// Only compute job types default to "Submit to queue? Yes" (DEFAULT_QUEUE_JOB_TYPES, overridable)
 	const char * queue_types_input = getenv("RELION_QUEUE_JOB_TYPES");
-	if (use_queue && queue_types_input != NULL)
+	const std::string queue_types = (queue_types_input == NULL) ? DEFAULT_QUEUE_JOB_TYPES : queue_types_input;
+	if (use_queue && queue_types != "all")
 	{
 		const std::string my_dirname = proc_type2dirname.count(type) ? proc_type2dirname.at(type) : std::string();
-		bool listed = false;
-		std::stringstream ss(queue_types_input);
-		std::string item;
-		while (std::getline(ss, item, ','))
-		{
-			item.erase(0, item.find_first_not_of(" \t"));
-			item.erase(item.find_last_not_of(" \t") + 1);
-			if (!item.empty() && item == my_dirname) listed = true;
-		}
-		use_queue = listed;
+		const std::vector<std::string> listed_types = splitCommaList(queue_types);
+		use_queue = std::find(listed_types.begin(), listed_types.end(), my_dirname) != listed_types.end();
 	}
 
 	joboptions["do_queue"] = JobOption("Submit to queue?", use_queue, "If set to Yes, the job will be submit to a queue, otherwise \
@@ -1043,6 +1059,18 @@ restricted to the job types listed in RELION_QUEUE_JOB_TYPES. Unless the GUI was
 	{
 		default_command = DEFAULTQSUBCOMMAND;
 	}
+
+	const char *nodespread_options_input = getenv("RELION_QSUB_NODESPREAD_OPTIONS");
+	std::vector<std::string> nodespread_options = splitCommaList(nodespread_options_input ? nodespread_options_input : DEFAULT_NODESPREAD_OPTIONS);
+	if (nodespread_options.empty()) nodespread_options.push_back("auto");
+	const char *nodespread_default = getenv("RELION_QSUB_NODESPREAD_DEFAULT");
+	int inodespread = 0;
+	for (int j = 0; j < nodespread_options.size(); j++)
+		if (nodespread_default != NULL && nodespread_options[j] == nodespread_default) inodespread = j;
+	joboptions["nodespread"] = JobOption("Node spread:", nodespread_options, inodespread, "How the submission script distributes the job over nodes \
+(passed to the queue template as XXXnodespreadXXX): auto = normal; normal = don't force it either way; min = use as few nodes as possible; \
+max = spread over as many nodes as possible; full = always allocate entire nodes. \
+The choices and the default can be changed through RELION_QSUB_NODESPREAD_OPTIONS and RELION_QSUB_NODESPREAD_DEFAULT.");
 
 	joboptions["qsub"] = JobOption("Queue submit command:", std::string(default_command), "Name of the command used to submit scripts to the queue, e.g. qsub or bsub.\n\n\
 Note that the person who installed RELION should have made a custom script for your cluster/queue setup. Check this is the case \
@@ -1084,16 +1112,7 @@ Unless the GUI was started with --expert, this field is not shown and the defaul
 			char *extra_options = getenv(query_options.c_str());
 			std::vector<std::string> option_list;
 			if (extra_options != NULL)
-			{
-				std::stringstream ss(extra_options);
-				std::string item;
-				while (std::getline(ss, item, ','))
-				{
-					item.erase(0, item.find_first_not_of(" \t"));
-					item.erase(item.find_last_not_of(" \t") + 1);
-					if (!item.empty()) option_list.push_back(item);
-				}
-			}
+				option_list = splitCommaList(extra_options);
 			if (!option_list.empty())
 			{
 				int idefault = 0;
